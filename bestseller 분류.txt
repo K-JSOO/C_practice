@@ -1,0 +1,430 @@
+---
+title: "**악세서리 bestseller 분류**"
+author: "김지수"
+date: '2019.9.31'
+output: 
+  html_document: 
+  theme: simplex
+  toc: yes
+  umber_sections: yes
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, results = "hide")
+Sys.setlocale("LC_COLLATE", "ko_KR.UTF-8")
+#install.packages('rmdformats') # rmarkdown 테마
+#install.package('data.table')
+library(data.table)
+#install.package('adabag')
+#library(adabag)
+#install.package('caret')
+library(caret)
+#install.package('ROCR')
+library(ROCR)   # prediction
+#install.package('gmodels')
+library(gmodels) # CrossTable
+#install.package('C50')
+library(C50)  # 의사결정트리
+#install.package('DMwR')
+library(DMwR)  # 데이터 불균형
+#install.packages('class')
+library(class)   # knn
+#install.packages('e1071') 
+library(e1071) # 나이브베이즈
+#install.packages('vcd')
+library(vcd)
+#install.packages('OneR')
+library('OneR')
+```
+
+
+
+## **주제** 
+악세사리가 bestseller인지 확인합니다.
+
+
+
+## **데이터 소개**
+악세사리 중 품목유형과 품목의 사용된 보석 또는 물자를 확인하여 물품이 bestseller 인지 아닌지
+예측합니다
+라벨 변수는 best_seller입니다.
+
+```{r analysis0, results="markup"}
+setwd('C:\\data')
+best <- read.csv("c:\\data\\bestseller.csv")
+str(best)
+```
+
+
+
+best의 image 컬럼은 이번 분석에서 사용하지 않으므로 제외하고 진행하겠습니다.
+
+```{r analysis1, results="markup"}
+best<-best[c(-4,-22,-23,-25,-26,-27,-29,-30)]
+str(best)
+```
+
+
+
+데이터 컬럼의 자료구조를 모두 factor로 변환시켜줍니다
+
+```{r analysis2, results="markup"}
+for(i in 1:ncol(best)){
+  best[,i] <- factor(best[,i])  }
+str(best)
+```
+
+
+
+## **데이터 탐색** 
+bestseller와 일반 판매 물건의 비율입니다.
+
+```{r analysis3, results="markup"}
+round(prop.table(table(best$best_seller)),3)
+x<-c(nrow(best[best$best_seller==1,]), nrow(best[best$best_seller==0,]))
+names(x)<-c('yes','no')
+barplot(x,col=c('pink','skyblue'),density=80, main="bestseller rate",ylim=c(0,300))
+```
+
+
+
+bsetseller의 컬럼 시각화입니다.
+
+- price
+
+price는 factor 형식의 데이터이고 영문과 특수문자가 섞여있어서 
+영문과 특수문자를을 제거한 후 as.numeric으로 숫자로 변환해주었습니다.
+
+```{r analysis4, results="markup"}
+best$price<-substr(best$price,3,100)
+best$price<-gsub("[^[:alnum:][:blank:]+?&/\\-]", "", best$price)
+best$price<-as.numeric(best$price)
+
+prso<-sort(best$price)
+par(mfrow=c(2,1))
+par(mar=c(2,2,2,2))
+
+hist(best$price,col='pink',density=80, main='price histogram',ylim=c(0,300))
+par(new=T)
+plot(prso, dnorm(prso,mean=mean(prso),sd=sd(prso)),type='l',axes=FALSE,ann=FALSE,col='blue')
+
+hist(log2(as.integer(best$price)),col='pink',density=80, main='log2(price) histogram',ylim=c(0,100))
+par(new=T)
+plot(log2(prso), dnorm(log2(prso),mean=mean(log2(prso))),sd=sd(log2(prso)),type='l',axes=FALSE,ann=FALSE,col='blue')
+```
+
+
+
+- 악세사리 별 bestseller 개수
+
+```{r analysis5, results="markup"}
+ac<-c(nrow(best[best$ring==1,]),nrow(best[best$necklace==1,]),
+      nrow(best[best$earring==1,]),nrow(best[best$choker==1,]),
+      nrow(best[best$pendant==1,]))
+names(ac)<-c('ring','necklace','earring','choker','pandant')
+barplot(ac,col='skyblue',ylim=c(0,120),density=80)
+```
+
+
+
+- 악세사리에 포함된 보석의 개수
+
+```{r analysis6, results="markup"}
+ju<-c(nrow(best[best$pearl==1,]),nrow(best[best$opal==1,]),
+      nrow(best[best$topaz==1,]),nrow(best[best$amethyst==1,]),
+      nrow(best[best$malachite==1,]),nrow(best[best$amazonite==1,]),
+      nrow(best[best$labradorite==1,]),nrow(best[best$sapphires==1,]),
+      nrow(best[best$agate==1,]),nrow(best[best$quartzite==1,]),
+      nrow(best[best$gemstones==1,]),nrow(best[best$spinel==1,]),
+      nrow(best[best$onyx==1,]),nrow(best[best$diamonds==1,]),
+      nrow(best[best$ruby==1,]))
+names(ju)<-c('pearl','opal','topaz','amethyst','malachite','amazonite',
+             'labradorite','sapphires','agate','quartzite','gemstones',
+             'spinel','onyx','diamonds','ruby')
+barplot(ju,col='skyblue',ylim=c(0,70),density=80)
+```
+
+
+
+## **데이터로 모델 훈련-의사결정트리**
+```{r}
+set.seed(0)
+best_shuffle <- best[ sample( nrow(best) ),  ]
+train_num<-round(0.8 * nrow(best_shuffle), 0) 
+best_train<-best_shuffle[1:train_num ,-1]
+best_test<-best_shuffle[(train_num+1) : nrow(best_shuffle),-1 ]
+best_model<-C5.0(best_train[ ,-1] ,best_train[  ,1] )
+best_train[best_train[  ,1]=='none',]
+best_model[]
+
+best_pred <-predict(best_model,best_test )
+```
+
+
+
+- 모델 성능 평가
+```{r analysis7, results="markup"}
+CT<-CrossTable(best_test[ , 1],best_pred )
+print(paste('정확도 : ',(CT$prop.tbl[1]+CT$prop.tbl[4])*100))
+```
+
+bestseller를 예측하는 정확도가 약 83.58% 나왔습니다.
+
+- 클래스 균형화
+위의 yes와 no비율 그래프로 보면 yes와 no의 비율차이가 많이 납니다. 이러한 상태를 클래스 
+불균형 상태라고 하는데 이런 상태로 훈련을 시키면 비율이 높은 클래스만 훈련이 많이 되서 
+예측결과가 부정확하게 나올수 있습니다.따라서 훈련을 하기 전에 yes와 no가 비율차이를 
+줄여주겠습니다. 불균형을 줄여주는 방법에는 upSample, downSample, SMOTE 등 여러가지가 있지만 
+여기서는 SMOTE을 사용하겠습니다.
+
+```{r}
+best <- read.csv("c:\\data\\bestseller.csv")
+
+best<-best[c(-4,-22,-23,-25,-26,-27,-29,-30)]
+
+for(i in 1:ncol(best)){
+  best[,i] <- factor(best[,i])  }
+
+best$price<-substr(best$price,3,100)
+best$price<-gsub("[^[:alnum:][:blank:]+?&/\\-]", "", best$price)
+best$price<-as.numeric(best$price)
+```
+
+
+```{r analysis8, results="markup"}
+best<-SMOTE(best_seller~.,best,perc.over=2000,perc.under=110)
+table(best$best_seller)
+```
+```{r}
+set.seed(0)
+best_shuffle <- best[ sample( nrow(best) ),  ]
+train_num<-round(0.8 * nrow(best_shuffle), 0) 
+best_train<-best_shuffle[1:train_num ,-1]
+best_test<-best_shuffle[(train_num+1) : nrow(best_shuffle),-1 ]
+best_model<-C5.0(best_train[ ,-1] ,best_train[  ,1] )
+best_pred <-predict(best_model,best_test)
+```
+
+
+```{r analysis9, results="markup"}
+CT<-CrossTable(best_test[ , 1],best_pred )
+print(paste('정확도 : ',(CT$prop.tbl[1]+CT$prop.tbl[4])*100))
+```
+클래스 불균형을 해결하기 전의 정확도는 약 83.58% 가 나왔습니다. 클래스 불균형을 줄여준 뒤의 정확도는 약 89.07%으로 정확도가 올랐습니다. 
+
+
+
+- Roc 
+
+예측 데이터 프레임을 생성합니다. 
+
+```{r}
+best_test_prob <- predict(best_model,best_test,type="prob")
+best_results2 <- data.frame(actual_type=best_test[  , 1],
+                            predict_type=best_pred,
+                            prob_edible=round(best_test_prob[ ,1], 5),
+                            prob_poisonous=round(best_test_prob[ ,2], 5) )
+```
+
+
+
+예측 데이터 프레임을 csv로 저장합니다.
+```{r}
+write.csv(best_results2, "c:\\data\\best_results_c50.csv", row.names = FALSE)
+```
+
+
+
+ROC 커브를 그립니다. 
+
+```{r echo=FALSE, eval=TRUE}
+best_results <- read.csv("c:\\data\\best_results_c50.csv")
+pred <- prediction(predictions = best_results$prob_poisonous, labels = best_results$actual_type)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, main = "ROC curve for best bestseller filter", col = "blue", lwd = 2)
+abline(a=0, b=1, lwd=2, lty=2)
+```
+
+
+
+AUC 값을 출력합니다.
+
+```{r analysis10, results="markup"}
+perf.auc <- performance(pred, measure = "auc")
+unlist(perf.auc@y.values)
+```
+
+AUC값은 약 0.96가 나왔습니다.
+
+- 모델 성능 개선
+
+의사결정트리에서 정확도를 높이는 방법은 trials값을 높이는 것입니다.
+가장 적절한 trials값을 찾는 것을 시각화 하겠습니다.
+
+
+```{r}
+a2<-c()
+for (i in 1:100){
+  if(!i %in% c(3,4) ){
+    best_model<-C5.0( best_train[ ,-1] , best_train[ , 1],trials=i)
+    best_result<-predict( best_model, best_test[ , -1] ) 
+    a<-CrossTable( best_test[, 1], best_result )
+    a2<-append(a2,(a$prop.tbl[1]+a$prop.tbl[4])) } }
+```
+
+
+```{r analysis11, results="markup"}
+a3<-data.table('idx'=c(1:98),'pred'=a2)
+plot(a3,type='l',col='red',xlim=c(1,98), ylim=c(min(a3$pred),max(a3$pred)),ann=F,axes=FALSE)
+par(new=T)
+plot(which.max(a3$pred),max(a3$pred),xlim=c(1,98),
+     ylim=c(min(a3$pred),max(a3$pred)),type='o', col='blue',
+     pch='★',xlab='trial number', ylab='accuracy ratio')
+print(paste('가장 적절한 trials 값 : ',min(a3[a3$pred==max(a3$pred),'idx'])))
+```
+가장 높은 정확도를 나오게 하는 trials 값은 47이 나왔습니다.
+
+
+
+```{r analysis12, results="markup"}
+best_model<-C5.0(best_train[ ,-1] ,best_train[  ,1],trials=47 )
+best_pred <-predict(best_model,best_test)
+CT2<-CrossTable(best_test[   , 1],best_pred )
+print(paste('정확도 : ',(CT2$prop.tbl[1]+CT2$prop.tbl[4])*100))
+```
+정확도가 83.58%에서 96.67%로 올랐습니다.
+
+
+
+- 민감도
+```{r analysis13, results="markup"}
+for(i in 1:ncol(best_results)){
+  best_results[,i] <- factor(best_results[,i])  }
+sensitivity(best_results$predict_type, best_results$actual_type,positive='1')
+```
+민감도는 0.92가 나왔습니다. 민감도는 실제 참인 것 중에서 참인 것으로 예측한 비율로 위의 데이터에서는 bestseller인 물건중에 bestseller라고 
+예측된 물건의 비율입니다.민감도는 0에서 1까지의 범위에 있으면 값이 1에 가까울수록 바람직한데 0.92로 높은 수치의 민감도가 나왔습니다.
+
+
+
+- 특이도
+```{r analysis14, results="markup"}
+specificity(best_results$predict_type, best_results$actual_type,negative='0')
+```
+특이도는 0.95가 나왔습니다. 특이도는 실제 거짓인 것 중에서 거짓으로 예측한 비율로 위의 데이터에서는 bestseller가 아닌 물건중에 bestseller가
+아니라고 예측된 물건의 비율입니다.특이도 또한 0에서 1까지의 범위에 있으면 값이 1에 가까울수록 바람직한데 0.95으로 높은 수치의 
+민감도가 나왔습니다.
+
+
+
+
+## **데이터로 모델 훈련-나이브베이즈**
+```{r}
+best <- read.csv("c:\\data\\bestseller.csv")
+
+best<-best[c(-4,-22,-23,-25,-26,-27,-29,-30)]
+
+best$price<-substr(best$price,3,100)
+best$price<-gsub("[^[:alnum:][:blank:]+?&/\\-]", "", best$price)
+best$price<-as.numeric(best$price)
+
+for(i in 1:ncol(best)){
+  best[,i] <- factor(best[,i])  }
+```
+
+
+```{r analysis15, results="markup"}
+best<-SMOTE(best_seller~.,best,perc.over=2000,perc.under=110)
+table(best$best_seller)
+```
+
+
+```{r}
+set.seed(0)
+best_shuffle <- best[ sample( nrow(best) ),  ]
+train_num<-round(0.8 * nrow(best_shuffle), 0) 
+best_train<-best_shuffle[1:train_num ,-1]
+best_test<-best_shuffle[(train_num+1) : nrow(best_shuffle),-1 ]
+best_model<-naiveBayes(best_seller~.,data=best_train)
+best_pred<-predict(best_model, best_test[ , -1] )
+```
+
+
+```{r analysis16, results="markup"}
+CT<-CrossTable(best_test[ , 1],best_pred )
+print(paste('정확도 : ',(CT$prop.tbl[1]+CT$prop.tbl[4])*100))
+```
+
+
+
+- 예측 데이터 프레임 csv로 저장
+```{r}
+best_test_prob<-predict(best_model,best_test,type="raw")
+best_results2<-data.frame(actual_type=best_test[,1],
+                          predict_type=best_pred,
+                          prob_nonbestseller=round(best_test_prob[ ,1], 5),
+                          prob_bestseller=round(best_test_prob[ ,2], 5) )
+write.csv(best_results2, "c:\\data\\best_results_na.csv", row.names = FALSE)
+```
+
+
+
+- 모델 성능 개선 
+```{r}
+n<-seq(0.1,1,by=0.01)
+a2=c( )
+for (i in n){
+  best_model2 <- naiveBayes(best_seller~ . , data=best_train, laplace=i)
+  best_pred2 <- predict( best_model2, best_test[ , -1] )
+  a<-CrossTable( best_test[ ,1], best_pred2)
+  a2<-append(a2,(a$prop.tbl[1]+a$prop.tbl[4])) }
+```
+
+
+```{r analysis17, results="markup"}
+plot(n,a2,type='l',col='red')
+
+best_model2 <- naiveBayes(best_seller~ . , data=best_train, laplace=0.04)
+best_pred2 <- predict( best_model2, best_test[ , -1] )
+CT2<-CrossTable( best_test[ ,1], best_pred2)
+print(paste('정확도 : ',(CT2$prop.tbl[1]+CT2$prop.tbl[4])*100))
+```
+
+
+
+- best_results_knn.csv 불러온다.
+```{r}
+best_results<-read.csv('c:\\data\\best_results_na.csv')
+for(i in 1:ncol(best_results)){
+  best_results[,i] <- factor(best_results[,i])  }
+```
+
+
+
+- 민감도
+```{r analysis18, results="markup"}
+sensitivity(best_results$predict_type, best_results$actual_type,positive='1')
+```
+민감도는 0.95가 나왔습니다. 민감도는 실제 참인 것 중에서 참인 것으로 예측한 비율로 위의 데이터에서는 bestseller인 물건중에 bestseller라고 
+예측된 물건의 비율입니다.민감도는 0에서 1까지의 범위에 있으면 값이 1에 가까울수록 바람직한데 0.95로 높은 수치의 민감도가 나왔습니다.
+
+
+
+- 특이도
+```{r analysis19, results="markup"}
+specificity(best_results$predict_type, best_results$actual_type,negative='0')
+```
+특이도는 0.83가 나왔습니다. 특이도는 실제 거짓인 것 중에서 거짓으로 예측한 비율로 위의 데이터에서는 bestseller가 아닌 물건중에 bestseller가
+아니라고 예측된 물건의 비율입니다.특이도 또한 0에서 1까지의 범위에 있으면 값이 1에 가까울수록 바람직한데 0.83으로 적당히 높은 수치의 
+민감도가 나왔습니다.
+
+
+
+## **결론 **
+의사결정 트리, 나이브베이즈 세가지 방법으로 악세사리의 bestseller를 분류했습니다. 의사결정 트리의 처음 정확도는 약 83.58%이였습니다.
+하지만 smote로 bestseller와 non_bestseller의 비율을 맞춰주자 정확도가 약 89.0.7이 되었습니다. 이후의 의사결정 트리, 나이브베이즈
+모두 smote를 적용한 데이터로 분석을 실행하였습니다. 의사결정 트리의 성능 평가를 해서 trias값에 변화를 주어 모델에 적용한 결과 47에서
+가장 높은 정확도가 나왔습니다. 최종 정확도는 약 96.67%가 나왔습니다. 의사결정트리의  특이도와 민감도는 각각 0.92, 0.94가 나왔습니다.
+
+나이브베이즈의 처음 정확도는 약 89.07%이였습니다. 나이브베이즈의 성능 평가를 해서 laplace값에 변화를 주어 모델에 적용한 결과 0.04에서
+가장 높은 정확도가 나왔습니다. 최종 정확도는 약 89.55%가 나왔습니다. 나이브베이즈의  특이도와 민감도는 각각 0.95, 0.83이 나왔습니다.
