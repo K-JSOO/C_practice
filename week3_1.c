@@ -8,6 +8,12 @@ const int SCORE[GRADE]={95,90,85,80,75,70,65,60,0};
 const char *GRADES[GRADE]={"A+","A","B+","B","C+","C","D+","D","F"}; // *(포인터) : 메모리 주소값을 저장할 수 있는 자료형
 
 int main(void) {
+    printf("학점 프로그램입니다.\n");
+    printf("종료를 원하면 '-1'을 입력하세요.\n");
+    printf("[학점 테이블]\n");
+    printf("점수 : 95, 90, 85, 80, 75, 70, 65, 60, 0\n");
+    printf("학점 : A+, A,  B+, B,  C+, C,  D+, D,  F\n");
+
     while (true) {
         int stu_score = get_int("성적을 입력하세요.(0~100) : "); // 성적 입력
 
