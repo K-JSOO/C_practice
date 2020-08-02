@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <cs50.h>
 
 int *sort_num(int num[]);  // 함수 sort_num 선언
 
