@@ -18,7 +18,7 @@ Stack* createStack(int capacity) {
 
 // 스택 초기 설정
 int isFull(Stack* stack) {
-    return stack->top == stack->capacity-1;
+    return stack->top == stack->capacity-1; // 스택의 top(스택+1)을 item으로 대입
 }
 
 // 빈 스택 확인
